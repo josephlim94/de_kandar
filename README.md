@@ -14,3 +14,9 @@ Or,
 1. Use poetry to run the python application: `poetry run python ./main.py`
 
 To stop the screen recording, go back to terminal and press "q".
+
+# Demo
+https://github.com/josephlim94/de_kandar/assets/5723232/69592fa4-a80f-454e-abc6-751563281562
+
+# License
+MIT License
