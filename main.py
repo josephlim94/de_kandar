@@ -5,6 +5,8 @@ import tkinter as tk
 import numpy as np
 from PIL import Image, ImageTk
 import ffmpeg
+import subprocess
+import time
 
 
 format = "%(asctime)s: %(message)s"
@@ -14,6 +16,7 @@ logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
 class Application:
     video_width: int = 640
     video_height: int = 480
+    record_video_process: subprocess.Popen = None
 
     def __init__(self) -> None:
         self.bg = "#E6FBFF"
@@ -34,7 +37,7 @@ class Application:
         )
         self.title.grid(row=0, column=0, sticky=tk.N, pady=(40, 20), padx=40)
 
-        self.snip_button = tk.Button(
+        self.select_area_button = tk.Button(
             self.main_window,
             text="Select Area",
             font=("TIMES NEW ROMAN", 14),
@@ -43,17 +46,17 @@ class Application:
             height=2,
             width=12,
             command=self.selectArea,
-            bd=7,
+            bd=4,
             relief=tk.RAISED,
         )
-        self.snip_button.grid(row=1, column=0, pady=30, padx=20)
+        self.select_area_button.grid(row=1, column=0, pady=30, padx=20)
 
         self.video_player = tk.Label(
             self.main_window,
             bg=self.fg,
             fg=self.bg,
         )
-        self.video_player.grid(row=2, column=0, pady=30, padx=20)
+        self.video_player.grid(row=0, column=1, pady=30, padx=20, rowspan=999)
 
         blank_image = Image.new(
             "RGB", (self.video_width, self.video_height), (255, 255, 255)
@@ -94,8 +97,10 @@ class Application:
             self.current_frame = ImageTk.PhotoImage(im)
 
             self.video_player.config(image=self.current_frame)
+            time.sleep(0.001)
 
         self.record_video_process.wait()
+        self.record_video_process = None
 
         logging.info("Thread %s: finishing", name)
 
@@ -120,7 +125,7 @@ class Application:
         self.screenCanvas.pack(fill=tk.BOTH, expand=tk.YES)
 
         self.screenCanvas.bind("<ButtonPress-1>", self.on_button_press)
-        self.screenCanvas.bind("<B1-Motion>", self.on_move_press)
+        self.screenCanvas.bind("<B1-Motion>", self.on_mouse_move)
         self.screenCanvas.bind("<ButtonRelease-1>", self.on_button_release)
 
         self.master_screen.attributes("-fullscreen", True)
@@ -150,7 +155,7 @@ class Application:
         self.main_window.deiconify()
 
         # Get pix_fmt by running "ffmpeg -pix_fmts"
-        self.record_video_process = (
+        self.record_video_process: subprocess.Popen = (
             ffmpeg.input(
                 "desktop",
                 format="gdigrab",
@@ -181,7 +186,7 @@ class Application:
             self.x, self.y, 1, 1, outline="white", width=2, fill="blue"
         )
 
-    def on_move_press(self, event):
+    def on_mouse_move(self, event):
         self.curX = self.screenCanvas.canvasx(event.x)
         self.curY = self.screenCanvas.canvasy(event.y)
         # expand rectangle as you drag the mouse
