@@ -2,13 +2,10 @@ import logging
 import sys
 import threading
 import tkinter as tk
-import numpy as np
 from PIL import Image, ImageTk
-# import subprocess
 import time
 import errno
 
-# import ffmpeg
 import av
 from av import VideoFrame
 
@@ -20,11 +17,13 @@ logger = logging.getLogger()
 class Application:
     video_width: int = 640
     video_height: int = 480
-    # record_video_process: subprocess.Popen = None
+    __thread: threading.Thread
 
     def __init__(self) -> None:
         self.bg = "#E6FBFF"
         self.fg = "#8A84E2"
+
+        self.__thread = None
 
         self.main_window = tk.Tk()
         self.main_window.title("De Kandar")
@@ -77,36 +76,13 @@ class Application:
 
         self.main_window.config(menu=self.menu)
 
+        self.main_window.protocol("WM_DELETE_WINDOW", self.eex)
+
         # bring to front
         self.raise_above_all(self.main_window)
 
     def startMainLoop(self):
         self.main_window.mainloop()
-
-    def bak_get_and_display_frame(self, name):
-        logging.info("Thread %s: starting", name)
-        while True:
-            in_bytes = self.record_video_process.stdout.read(
-                self.video_width * self.video_height * 3
-            )
-            if not in_bytes:
-                break
-
-            in_frame = np.frombuffer(in_bytes, np.uint8).reshape(
-                [self.video_height, self.video_width, 3]
-            )
-
-            im = Image.fromarray(in_frame)
-
-            self.current_frame = ImageTk.PhotoImage(im)
-
-            self.video_player.config(image=self.current_frame)
-            time.sleep(0.001)
-
-        self.record_video_process.wait()
-        self.record_video_process = None
-
-        logging.info("Thread %s: finishing", name)
 
     def get_and_display_frame(
         self, name, video_width: int, video_height: int, offset_x: int, offset_y: int
@@ -139,8 +115,6 @@ class Application:
 
                 break
 
-            logger.info(frame)
-
             if isinstance(frame, VideoFrame):
                 if frame.pts is None:  # pragma: no cover
                     logger.warning(
@@ -156,12 +130,13 @@ class Application:
                 image = frame.to_image()
 
                 if not self.__thread_quit.is_set():
-                    self.current_frame = ImageTk.PhotoImage(image)
+                    self.current_frame_image = ImageTk.PhotoImage(image)
 
-                    self.video_player.config(image=self.current_frame)
+                    self.video_player.config(image=self.current_frame_image)
 
-        logger.info("Closing container")
+        logger.info(8)
         container.close()
+        logger.info(9)
 
         logging.info("Thread %s: finishing", name)
 
@@ -222,27 +197,6 @@ class Application:
         )
         self.__thread.start()
 
-        # # Get pix_fmt by running "ffmpeg -pix_fmts"
-        # self.record_video_process: subprocess.Popen = (
-        #     ffmpeg.input(
-        #         "desktop",
-        #         format="gdigrab",
-        #         framerate=30,
-        #         offset_x=self.offset_x,
-        #         offset_y=self.offset_y,
-        #         # s=f"{width}x{height}",
-        #         video_size=[
-        #             self.video_width,
-        #             self.video_height,
-        #         ],  # Using this video_size=[] or s="" is the same
-        #         show_region=1,
-        #     )
-        #     .output("pipe:", format="rawvideo", pix_fmt="rgb24")
-        #     .run_async(pipe_stdout=True)
-        # )
-        # x = threading.Thread(target=self.get_and_display_frame, args=(1,))
-        # x.start()
-
         return event
 
     def on_button_press(self, event):
@@ -269,9 +223,10 @@ class Application:
 
     def eex(self):
         logger.info("Exiting")
-        self.__thread_quit.set()
-        self.__thread.join()
-        self.__thread = None
+        if self.__thread:
+            self.__thread_quit.set()
+            self.__thread.join()
+            self.__thread = None
         self.main_window.destroy()
         sys.exit()
 
