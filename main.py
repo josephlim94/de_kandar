@@ -134,9 +134,7 @@ class Application:
 
                     self.video_player.config(image=self.current_frame_image)
 
-        logger.info(8)
         container.close()
-        logger.info(9)
 
         logging.info("Thread %s: finishing", name)
 
