@@ -102,17 +102,7 @@ class VideoStream:
         logger.info("Event loop thread starting")
         asyncio.set_event_loop(self.loop)
 
-        async def main():
-            """Use this to keep the event loop running"""
-            while not self.__thread_loop_quit.is_set():
-                await asyncio.sleep(1)
-                logger.info("iterating")
-            self.__thread_loop_quit_complete.set()
-
-        try:
-            self.loop.run_until_complete(main())
-        finally:
-            self.loop.close()
+        self.loop.run_forever()
         logger.info("Event loop thread finishing")
 
     def start(self) -> None:
@@ -123,8 +113,7 @@ class VideoStream:
         )
         self.__thread.start()
 
-        self.__thread_loop_quit = threading.Event()
-        self.__thread_loop_quit_complete = threading.Event()
+        self.__thread_loop_quit = asyncio.Event()
         self.loop = asyncio.new_event_loop()
         self.__thread_loop = threading.Thread(
             target=self.run_event_loop,
@@ -141,20 +130,14 @@ class VideoStream:
             self.__thread.join()
             self.__thread = None
 
-        if self.__server_url:
-            asyncio.run_coroutine_threadsafe(
-                self.disconnect_server(), self.loop
-            ).result()
-
         if self.__thread_loop:
-            self.__thread_loop_quit.set()
-            self.loop.call_soon_threadsafe(self.__thread_loop_quit.set)
-            self.__thread_loop_quit_complete.wait()
-            logger.info("quit complete")
+            if self.__server_url:
+                asyncio.run_coroutine_threadsafe(
+                    self.disconnect_server(), self.loop
+                ).result()
 
-            while self.loop.is_running():
-                time.sleep(1)
-            logger.info("Run finish")
+            self.loop.call_soon_threadsafe(self.__thread_loop_quit.set)
+
             self.loop.stop()
             self.__thread_loop.join()
             self.__thread_loop = None

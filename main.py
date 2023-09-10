@@ -53,6 +53,20 @@ class Application:
         )
         self.select_area_button.grid(row=1, column=0, pady=30, padx=20)
 
+        self.select_area_button = tk.Button(
+            self.main_window,
+            text="Stop",
+            font=("TIMES NEW ROMAN", 14),
+            bg=self.fg,
+            fg=self.bg,
+            height=2,
+            width=12,
+            command=self.stop_stream,
+            bd=4,
+            relief=tk.RAISED,
+        )
+        self.select_area_button.grid(row=2, column=0, pady=30, padx=20)
+
         self.video_player = tk.Label(
             self.main_window,
             bg=self.fg,
@@ -112,6 +126,10 @@ class Application:
         self.master_screen.lift()
         self.master_screen.attributes("-topmost", True)
 
+    def stop_stream(self) -> None:
+        if self.__video_stream:
+            self.__video_stream.stop()
+
     def on_button_release(self, event):
         self.end_x = self.screenCanvas.canvasx(event.x)
         self.end_y = self.screenCanvas.canvasy(event.y)
@@ -133,15 +151,14 @@ class Application:
 
         self.main_window.deiconify()
 
-        if self.__video_stream:
-            self.__video_stream.stop()
+        self.stop_stream()
         self.__video_stream = VideoStream(
             video_player=self.video_player,
             video_width=self.video_width,
             video_height=self.video_height,
             offset_x=self.offset_x,
             offset_y=self.offset_y,
-            server_url="https://janusmy.josephgetmyip.com/janusbase/janus",
+            server_url="wss://janusmy.josephgetmyip.com/janusbasews/janus",
             api_secret="janusrocks",
         )
         self.__video_stream.start()
@@ -173,8 +190,7 @@ class Application:
     def eex(self):
         logger.info("Exiting")
 
-        if self.__video_stream:
-            self.__video_stream.stop()
+        self.stop_stream()
 
         self.main_window.destroy()
         sys.exit()
