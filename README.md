@@ -2,8 +2,7 @@
 Select an area on monitor display and play it on tkinter application.
 
 ## Install
-1. Install ffmpeg using chocolatey: https://community.chocolatey.org/packages/ffmpeg
-2. Do poetry install: `poetry install`
+1. Do poetry install: `poetry install`
 
 ## Run Application
 1. Open poetry shell: `poetry shell`
