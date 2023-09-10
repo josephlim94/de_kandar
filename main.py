@@ -3,11 +3,8 @@ import sys
 import threading
 import tkinter as tk
 from PIL import Image, ImageTk
-import time
-import errno
 
-import av
-from av import VideoFrame
+from video_stream import VideoStream
 
 format = "%(asctime)s: %(message)s"
 logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
@@ -18,12 +15,14 @@ class Application:
     video_width: int = 640
     video_height: int = 480
     __thread: threading.Thread
+    __video_stream: VideoStream
 
     def __init__(self) -> None:
         self.bg = "#E6FBFF"
         self.fg = "#8A84E2"
 
         self.__thread = None
+        self.__video_stream = None
 
         self.main_window = tk.Tk()
         self.main_window.title("De Kandar")
@@ -84,60 +83,6 @@ class Application:
     def startMainLoop(self):
         self.main_window.mainloop()
 
-    def get_and_display_frame(
-        self, name, video_width: int, video_height: int, offset_x: int, offset_y: int
-    ):
-        logging.info("Thread %s: starting", name)
-
-        file = "desktop"
-        format = "gdigrab"
-        options = {
-            "video_size": f"{video_width}x{video_height}",
-            "framerate": "30",
-            "offset_x": str(offset_x),
-            "offset_y": str(offset_y),
-            "show_region": "1",
-        }
-        container = av.open(
-            file=file, format=format, mode="r", options=options, timeout=None
-        )
-
-        video_first_pts = None
-
-        while not self.__thread_quit.is_set():
-            try:
-                frame = next(container.decode())
-            except Exception as exc:
-                if isinstance(exc, av.FFmpegError) and exc.errno == errno.EAGAIN:
-                    logger.error(exc)
-                    time.sleep(0.01)
-                    continue
-
-                break
-
-            if isinstance(frame, VideoFrame):
-                if frame.pts is None:  # pragma: no cover
-                    logger.warning(
-                        f"MediaPlayer({container.name}) Skipping video frame with no pts",
-                    )
-                    continue
-
-                # video from a webcam doesn't start at pts 0, cancel out offset
-                if video_first_pts is None:
-                    video_first_pts = frame.pts
-                frame.pts -= video_first_pts
-
-                image = frame.to_image()
-
-                if not self.__thread_quit.is_set():
-                    self.current_frame_image = ImageTk.PhotoImage(image)
-
-                    self.video_player.config(image=self.current_frame_image)
-
-        container.close()
-
-        logging.info("Thread %s: finishing", name)
-
     def selectArea(self):
         self.rect = None
         self.x = self.y = 0
@@ -188,12 +133,16 @@ class Application:
 
         self.main_window.deiconify()
 
-        self.__thread_quit = threading.Event()
-        self.__thread = threading.Thread(
-            target=self.get_and_display_frame,
-            args=(1, self.video_width, self.video_height, self.offset_x, self.offset_y),
+        if self.__video_stream:
+            self.__video_stream.stop()
+        self.__video_stream = VideoStream(
+            video_player=self.video_player,
+            video_width=self.video_width,
+            video_height=self.video_height,
+            offset_x=self.offset_x,
+            offset_y=self.offset_y,
         )
-        self.__thread.start()
+        self.__video_stream.start()
 
         return event
 
@@ -221,10 +170,10 @@ class Application:
 
     def eex(self):
         logger.info("Exiting")
-        if self.__thread:
-            self.__thread_quit.set()
-            self.__thread.join()
-            self.__thread = None
+
+        if self.__video_stream:
+            self.__video_stream.stop()
+
         self.main_window.destroy()
         sys.exit()
 
