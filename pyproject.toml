@@ -8,11 +8,12 @@ readme = "README.md"
 packages = [{include = "de_kandar"}]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.12"
+python = ">=3.10,<3.11"
 numpy = "^1.25.1"
 pillow = "^10.0.0"
 ffmpeg-python = "^0.2.0"
 av = "^10.0.0"
+janus-client = "^0.6.1"
 
 
 [build-system]
