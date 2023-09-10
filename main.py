@@ -141,6 +141,8 @@ class Application:
             video_height=self.video_height,
             offset_x=self.offset_x,
             offset_y=self.offset_y,
+            server_url="https://janusmy.josephgetmyip.com/janusbase/janus",
+            api_secret="janusrocks",
         )
         self.__video_stream.start()
 

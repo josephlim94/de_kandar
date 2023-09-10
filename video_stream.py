@@ -6,15 +6,14 @@ from PIL import ImageTk
 import tkinter as tk
 import asyncio
 
-# import janus_client
+import janus_client
+from aiortc.contrib.media import MediaPlayer
 import av
 from av import VideoFrame
 
 format = "%(asctime)s: %(message)s"
 logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
 logger = logging.getLogger()
-
-loop = asyncio.new_event_loop()
 
 
 class VideoStream:
@@ -23,10 +22,17 @@ class VideoStream:
     video_height: int
     offset_x: int
     offset_y: int
-    server_url: str
+    __server_url: str
+    __api_secret: str
+    __token: str
 
     __thread: threading.Thread
     __thread_quit: threading.Event
+
+    session: janus_client.JanusSession
+    plugin_handle: janus_client.JanusVideoRoomPlugin
+
+    loop: asyncio.AbstractEventLoop
 
     def __init__(
         self,
@@ -36,13 +42,78 @@ class VideoStream:
         offset_x: int,
         offset_y: int,
         server_url: str = "",
+        api_secret: str = None,
+        token: str = None,
     ) -> None:
         self.video_player = video_player
         self.video_width = video_width
         self.video_height = video_height
         self.offset_x = offset_x
         self.offset_y = offset_y
-        self.server_url = server_url
+        self.__server_url = server_url
+        self.__api_secret = api_secret
+        self.__token = token
+
+    async def connect_server(self) -> None:
+        if not self.__server_url:
+            raise Exception("No server url")
+
+        # Create session
+        self.session = janus_client.JanusSession(
+            base_url=self.__server_url,
+            api_secret=self.__api_secret,
+            token=self.__token,
+        )
+
+        # Create plugin
+        self.plugin_handle = janus_client.JanusVideoRoomPlugin()
+
+        # Attach to Janus session
+        await self.plugin_handle.attach(session=self.session)
+
+    async def start_publish(self) -> None:
+        # Janus demo uses room_id = 1234
+        room_id = 12345
+
+        response = await self.plugin_handle.join(
+            room_id=room_id, display_name="Test video room publish"
+        )
+        if not response:
+            raise Exception("Failed to join room")
+
+        player = MediaPlayer("./Into.the.Wild.2007.mp4")
+        response = await self.plugin_handle.publish(player=player)
+        if not response:
+            raise Exception("Failed to publish")
+
+    async def stop_publish(self) -> None:
+        response = await self.plugin_handle.unpublish()
+        if not response:
+            logger.info("Failed to publish")
+
+        response = await self.plugin_handle.leave()
+        if not response:
+            logger.info("Failed to publish")
+
+    async def disconnect_server(self) -> None:
+        await self.session.destroy()
+
+    def run_event_loop(self) -> None:
+        logger.info("Event loop thread starting")
+        asyncio.set_event_loop(self.loop)
+
+        async def main():
+            """Use this to keep the event loop running"""
+            while not self.__thread_loop_quit.is_set():
+                await asyncio.sleep(1)
+                logger.info("iterating")
+            self.__thread_loop_quit_complete.set()
+
+        try:
+            self.loop.run_until_complete(main())
+        finally:
+            self.loop.close()
+        logger.info("Event loop thread finishing")
 
     def start(self) -> None:
         self.__thread_quit = threading.Event()
@@ -52,11 +123,41 @@ class VideoStream:
         )
         self.__thread.start()
 
+        self.__thread_loop_quit = threading.Event()
+        self.__thread_loop_quit_complete = threading.Event()
+        self.loop = asyncio.new_event_loop()
+        self.__thread_loop = threading.Thread(
+            target=self.run_event_loop,
+            args=(),
+        )
+        self.__thread_loop.start()
+
+        if self.__server_url:
+            asyncio.run_coroutine_threadsafe(self.connect_server(), self.loop).result()
+
     def stop(self) -> None:
         if self.__thread:
             self.__thread_quit.set()
             self.__thread.join()
             self.__thread = None
+
+        if self.__server_url:
+            asyncio.run_coroutine_threadsafe(
+                self.disconnect_server(), self.loop
+            ).result()
+
+        if self.__thread_loop:
+            self.__thread_loop_quit.set()
+            self.loop.call_soon_threadsafe(self.__thread_loop_quit.set)
+            self.__thread_loop_quit_complete.wait()
+            logger.info("quit complete")
+
+            while self.loop.is_running():
+                time.sleep(1)
+            logger.info("Run finish")
+            self.loop.stop()
+            self.__thread_loop.join()
+            self.__thread_loop = None
 
     def get_and_display_frame(
         self, name, video_width: int, video_height: int, offset_x: int, offset_y: int
