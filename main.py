@@ -1,10 +1,9 @@
 import logging
 import sys
-import threading
 import tkinter as tk
 from PIL import Image, ImageTk
 
-from video_stream import VideoStream
+from video_stream import VideoStreamPlayer
 
 format = "%(asctime)s: %(message)s"
 logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
@@ -14,14 +13,12 @@ logger = logging.getLogger()
 class Application:
     video_width: int = 640
     video_height: int = 480
-    __thread: threading.Thread
-    __video_stream: VideoStream
+    __video_stream: VideoStreamPlayer
 
     def __init__(self) -> None:
         self.bg = "#E6FBFF"
         self.fg = "#8A84E2"
 
-        self.__thread = None
         self.__video_stream = None
 
         self.main_window = tk.Tk()
@@ -152,7 +149,7 @@ class Application:
         self.main_window.deiconify()
 
         self.stop_stream()
-        self.__video_stream = VideoStream(
+        self.__video_stream = VideoStreamPlayer(
             video_player=self.video_player,
             video_width=self.video_width,
             video_height=self.video_height,
