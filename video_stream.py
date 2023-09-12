@@ -158,10 +158,9 @@ def player_worker_demux(
 
 
 class PlayerStreamTrack(MediaStreamTrack):
-    def __init__(self, player, kind):
+    def __init__(self, kind):
         super().__init__()
         self.kind = kind
-        self._player = player
         self._queue = asyncio.Queue()
         self._start = None
 
@@ -169,35 +168,31 @@ class PlayerStreamTrack(MediaStreamTrack):
         if self.readyState != "live":
             raise MediaStreamError
 
-        self._player._start(self)
         data = await self._queue.get()
         if data is None:
             self.stop()
             raise MediaStreamError
-        if isinstance(data, Frame):
-            data_time = data.time
-        elif isinstance(data, Packet):
-            data_time = float(data.pts * data.time_base)
+        # if isinstance(data, Frame):
+        #     data_time = data.time
+        # elif isinstance(data, Packet):
+        #     data_time = float(data.pts * data.time_base)
 
-        # control playback rate
-        if (
-            self._player is not None
-            and self._player._throttle_playback
-            and data_time is not None
-        ):
-            if self._start is None:
-                self._start = time.time() - data_time
-            else:
-                wait = self._start + data_time - time.time()
-                await asyncio.sleep(wait)
+        # # control playback rate
+        # if (
+        #     self._player is not None
+        #     and self._player._throttle_playback
+        #     and data_time is not None
+        # ):
+        #     if self._start is None:
+        #         self._start = time.time() - data_time
+        #     else:
+        #         wait = self._start + data_time - time.time()
+        #         await asyncio.sleep(wait)
 
         return data
 
     def stop(self):
         super().stop()
-        if self._player is not None:
-            self._player._stop(self)
-            self._player = None
 
 
 class MediaPlayer:
@@ -369,6 +364,8 @@ class VideoStreamPlayer:
         self.__api_secret = api_secret
         self.__token = token
 
+        self.__thread = None
+
     async def connect_server(self) -> None:
         if not self.__server_url:
             raise Exception("No server url")
@@ -448,9 +445,23 @@ class VideoStreamPlayer:
             file=file, format=format, mode="r", options=options, timeout=None
         )
 
+        self.__stream_track = []
+        self.__audio_stream = None
+        self.__video_stream = None
+        self.__stream = []
+        for stream in self.container.streams:
+            if stream.type == "audio" and not self.__audio_stream:
+                self.__audio_stream = stream
+                self.__stream_track.append(PlayerStreamTrack(kind="audio"))
+                self.__stream.append(stream)
+            elif stream.type == "video" and not self.__video_stream:
+                self.__video_stream = stream
+                self.__stream_track.append(PlayerStreamTrack(kind="video"))
+                self.__stream.append(stream)
+
         self.__thread_quit = threading.Event()
         self.__thread = threading.Thread(
-            target=self.get_and_display_frame,
+            target=self.get_frame,
             args=(1, self.container),
         )
         self.__thread.start()
@@ -463,15 +474,6 @@ class VideoStreamPlayer:
         )
         self.__thread_loop.start()
 
-        # async def start_get_frame_task():
-        #     return asyncio.create_task(self.get_frame_task())
-
-        # self.__get_frame_task_quit = asyncio.Event()
-        # self.__get_frame_task = asyncio.run_coroutine_threadsafe(
-        #     start_get_frame_task(), self.loop
-        # ).result()
-        # self.__get_frame_task.add_done_callback(self.get_frame_task_done_cb)
-
         if self.__server_url:
             asyncio.run_coroutine_threadsafe(self.connect_server(), self.loop).result()
 
@@ -481,9 +483,6 @@ class VideoStreamPlayer:
             # Give up on ending the thread cleanly
             # self.__thread.join()
             self.__thread = None
-
-        # if self.__get_frame_task:
-        #     self.__get_frame_task.cancel()
 
         if self.__thread_loop:
             if self.__server_url:
@@ -499,44 +498,6 @@ class VideoStreamPlayer:
 
         self.container.close()
 
-    # async def get_frame_task(self) -> None:
-    #     logging.info("Get frame task starting")
-
-    #     video_first_pts = None
-
-    #     while not self.__get_frame_task_quit.is_set():
-    #         try:
-    #             frame = next(self.container.decode())
-    #         except Exception as exc:
-    #             if isinstance(exc, av.FFmpegError) and exc.errno == errno.EAGAIN:
-    #                 logger.error(exc)
-    #                 time.sleep(0.01)
-    #                 continue
-
-    #             break
-
-    #         print(frame)
-
-    #         if isinstance(frame, VideoFrame):
-    #             if frame.pts is None:
-    #                 logger.warning(
-    #                     f"MediaPlayer({self.container.name}) Skipping video frame with no pts",
-    #                 )
-    #                 continue
-
-    #             # video from a webcam doesn't start at pts 0, cancel out offset
-    #             if video_first_pts is None:
-    #                 video_first_pts = frame.pts
-    #             frame.pts -= video_first_pts
-
-    #             image = frame.to_image()
-
-    #             self.current_frame_image = ImageTk.PhotoImage(image)
-
-    #             self.video_player.config(image=self.current_frame_image)
-
-    #     logging.info("Get frame task: finishing")
-
     def display_frame(self, frame: av.VideoFrame):
         image = frame.to_image()
 
@@ -544,14 +505,14 @@ class VideoStreamPlayer:
 
         self.video_player.config(image=self.current_frame_image)
 
-    def get_and_display_frame(self, name, container):
+    def get_frame(self, name, container):
         logging.info("Thread %s: starting", name)
 
         video_first_pts = None
 
         while not self.__thread_quit.is_set():
             try:
-                frame = next(container.decode())
+                frame = next(container.decode(*self.__stream))
             except Exception as exc:
                 if isinstance(exc, av.FFmpegError) and exc.errno == errno.EAGAIN:
                     logger.error(exc)
