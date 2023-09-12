@@ -6,6 +6,7 @@ from PIL import ImageTk, Image
 import tkinter as tk
 import asyncio
 from typing import Optional, Set, Union
+import fractions
 
 import janus_client
 from aiortc.contrib.media import MediaPlayer
@@ -169,6 +170,7 @@ class PlayerStreamTrack(MediaStreamTrack):
             raise MediaStreamError
 
         data = await self._queue.get()
+        logger.info(data)
         if data is None:
             self.stop()
             raise MediaStreamError
@@ -366,6 +368,19 @@ class VideoStreamPlayer:
 
         self.__thread = None
 
+        self.__audio_stream_track = None
+        self.__video_stream_track = None
+
+        self.audio_sample_rate = 48000
+        self.audio_samples = 0
+        self.audio_time_base = fractions.Fraction(1, self.audio_sample_rate)
+        self.audio_resampler = av.AudioResampler(
+            format="s16",
+            layout="stereo",
+            rate=self.audio_sample_rate,
+            frame_size=int(self.audio_sample_rate * AUDIO_PTIME),
+        )
+
     async def connect_server(self) -> None:
         if not self.__server_url:
             raise Exception("No server url")
@@ -394,7 +409,12 @@ class VideoStreamPlayer:
             raise Exception("Failed to join room")
 
         # player = MediaPlayer("./Into.the.Wild.2007.mp4")
-        response = await self.plugin_handle.publish(stream_track=self.__stream_track)
+        stream_tracks = []
+        if self.__audio_stream_track:
+            stream_tracks.append(self.__audio_stream_track)
+        if self.__video_stream_track:
+            stream_tracks.append(self.__video_stream_track)
+        response = await self.plugin_handle.publish(stream_track=stream_tracks)
         if not response:
             raise Exception("Failed to publish")
 
@@ -445,18 +465,17 @@ class VideoStreamPlayer:
             file=file, format=format, mode="r", options=options, timeout=None
         )
 
-        self.__stream_track = []
         self.__audio_stream = None
         self.__video_stream = None
         self.__stream = []
         for stream in self.container.streams:
             if stream.type == "audio" and not self.__audio_stream:
                 self.__audio_stream = stream
-                self.__stream_track.append(PlayerStreamTrack(kind="audio"))
+                self.__audio_stream_track = PlayerStreamTrack(kind="audio")
                 self.__stream.append(stream)
             elif stream.type == "video" and not self.__video_stream:
                 self.__video_stream = stream
-                self.__stream_track.append(PlayerStreamTrack(kind="video"))
+                self.__video_stream_track = PlayerStreamTrack(kind="video")
                 self.__stream.append(stream)
 
         self.__thread_quit = threading.Event()
@@ -502,6 +521,34 @@ class VideoStreamPlayer:
 
         self.container.close()
 
+    def send_frame(self, frame: av.VideoFrame) -> None:
+        if isinstance(frame, AudioFrame) and self.__audio_stream:
+            for frame in self.audio_resampler.resample(frame):
+                # fix timestamps
+                frame.pts = self.audio_samples
+                frame.time_base = self.audio_time_base
+                self.audio_samples += frame.samples
+
+                asyncio.run_coroutine_threadsafe(
+                    self.__audio_stream_track._queue.put(frame), self.loop
+                )
+        elif isinstance(frame, VideoFrame) and self.__video_stream:
+            if frame.pts is None:  # pragma: no cover
+                logger.warning(
+                    "MediaPlayer(%s) Skipping video frame with no pts",
+                    self.container.name,
+                )
+                return
+
+            # # video from a webcam doesn't start at pts 0, cancel out offset
+            # if video_first_pts is None:
+            #     video_first_pts = frame.pts
+            # frame.pts -= video_first_pts
+
+            asyncio.run_coroutine_threadsafe(
+                self.__video_stream_track._queue.put(frame), self.loop
+            )
+
     def display_frame(self, frame: av.VideoFrame):
         image = frame.to_image()
 
@@ -525,7 +572,7 @@ class VideoStreamPlayer:
 
                 break
 
-            print(frame)
+            # print(frame)
 
             if isinstance(frame, VideoFrame):
                 if frame.pts is None:
@@ -540,5 +587,6 @@ class VideoStreamPlayer:
                 frame.pts -= video_first_pts
 
                 self.display_frame(frame=frame)
+                self.send_frame(frame=frame)
 
         logging.info("Thread %s: finishing", name)
