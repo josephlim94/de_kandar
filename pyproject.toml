@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "de-kandar"
-version = "0.1.0"
+version = "0.2.0"
 description = "Select an area on monitor display and play it on tkinter application."
 authors = ["Joseph Lim <josephlim_94@hotmail.co.uk>"]
 license = "MIT"

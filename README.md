@@ -1,5 +1,5 @@
 # de_kandar
-Select an area on monitor display and play it on tkinter application.
+Select an area on monitor display and play it on tkinter application. The video stream will also be published to a Janus video room.
 
 ## Install
 1. Do poetry install: `poetry install`
