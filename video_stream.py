@@ -278,7 +278,10 @@ class VideoStreamPlayer:
 
             asyncio.run_coroutine_threadsafe(
                 self.__video_stream_track._queue.put(frame), self.loop
-            )
+            ).result()
+            # Call .result() here to always await the Queue.put
+            # It may cause the get_frame loop to be slower and may cause the
+            # event loop thread to not exit cleanly
 
     def display_frame(self, frame: av.VideoFrame):
         image = frame.to_image()
