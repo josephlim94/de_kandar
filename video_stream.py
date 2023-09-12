@@ -385,7 +385,7 @@ class VideoStreamPlayer:
 
     async def start_publish(self) -> None:
         # Janus demo uses room_id = 1234
-        room_id = 12345
+        room_id = 1234
 
         response = await self.plugin_handle.join(
             room_id=room_id, display_name="Test video room publish"
@@ -393,8 +393,8 @@ class VideoStreamPlayer:
         if not response:
             raise Exception("Failed to join room")
 
-        player = MediaPlayer("./Into.the.Wild.2007.mp4")
-        response = await self.plugin_handle.publish(player=player)
+        # player = MediaPlayer("./Into.the.Wild.2007.mp4")
+        response = await self.plugin_handle.publish(stream_track=self.__stream_track)
         if not response:
             raise Exception("Failed to publish")
 
@@ -476,6 +476,7 @@ class VideoStreamPlayer:
 
         if self.__server_url:
             asyncio.run_coroutine_threadsafe(self.connect_server(), self.loop).result()
+            asyncio.run_coroutine_threadsafe(self.start_publish(), self.loop).result()
 
     def stop(self) -> None:
         if self.__thread:
@@ -486,6 +487,9 @@ class VideoStreamPlayer:
 
         if self.__thread_loop:
             if self.__server_url:
+                asyncio.run_coroutine_threadsafe(
+                    self.stop_publish(), self.loop
+                ).result()
                 asyncio.run_coroutine_threadsafe(
                     self.disconnect_server(), self.loop
                 ).result()
